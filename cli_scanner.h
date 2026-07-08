@@ -48,6 +48,7 @@ void init_terminal(void);
 void scan_directory(const char *dir_path, int fix_mode);
 void scan_file(const char *file_path, int fix_mode);
 int check_braces(const char *content, const char *file_path, ScannerIssue *issues, int *issue_count);
+int check_v1_recovery(const char *content, const char *file_path, ScannerIssue *issues, int *issue_count);
 int check_semicolons(const char *content, const char *file_path, ScannerIssue *issues, int *issue_count);
 int check_list_imports(const char *content, const char *file_path, ScannerIssue *issues, int *issue_count);
 int check_empty_catch(const char *content, const char *file_path, ScannerIssue *issues, int *issue_count);

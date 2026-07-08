@@ -158,6 +158,226 @@ int check_class_name_pascal_case(const char *content, const char *file_path, Sca
     return found;
 }
 
+void get_line_at_ptr(const char *content, const char *p, char *line_buf, int max_len) {
+    const char *start = p;
+    while (start > content && *(start - 1) != '\n') {
+        start--;
+    }
+    const char *end = p;
+    while (*end != '\0' && *end != '\n' && *end != '\r') {
+        end++;
+    }
+    int len = (int)(end - start);
+    if (len >= max_len) {
+        len = max_len - 1;
+    }
+    strncpy(line_buf, start, len);
+    line_buf[len] = '\0';
+}
+
+int check_v1_recovery(const char *content, const char *file_path, ScannerIssue *issues, int *issue_count) {
+    int found_issues = 0;
+    int brace_stack[256];
+    int stack_depth = 0;
+    int line_num = 1;
+    const char *ptr = content;
+    int last_reported_line = 0;
+    
+    while (*ptr != '\0') {
+        if (*ptr == '\n') {
+            line_num++;
+            ptr++;
+            continue;
+        }
+        
+        // Skip comments and literals
+        if (*ptr == '/' && *(ptr + 1) == '/') {
+            ptr += 2;
+            while (*ptr != '\0' && *ptr != '\n') ptr++;
+            continue;
+        }
+        if (*ptr == '/' && *(ptr + 1) == '*') {
+            ptr += 2;
+            while (*ptr != '\0' && !(*ptr == '*' && *(ptr + 1) == '/')) {
+                if (*ptr == '\n') line_num++;
+                ptr++;
+            }
+            if (*ptr != '\0') ptr += 2;
+            continue;
+        }
+        if (*ptr == '"') {
+            ptr++;
+            while (*ptr != '\0' && *ptr != '"') {
+                if (*ptr == '\\' && *(ptr + 1) != '\0') {
+                    if (*(ptr + 1) == '\n') line_num++;
+                    ptr += 2;
+                } else {
+                    if (*ptr == '\n') line_num++;
+                    ptr++;
+                }
+            }
+            if (*ptr == '"') ptr++;
+            continue;
+        }
+        if (*ptr == '\'') {
+            ptr++;
+            while (*ptr != '\0' && *ptr != '\'') {
+                if (*ptr == '\\' && *(ptr + 1) != '\0') {
+                    if (*(ptr + 1) == '\n') line_num++;
+                    ptr += 2;
+                } else {
+                    if (*ptr == '\n') line_num++;
+                    ptr++;
+                }
+            }
+            if (*ptr == '\'') ptr++;
+            continue;
+        }
+        
+        if (*ptr == '{') {
+            int is_init = 0;
+            const char *back = ptr - 1;
+            while (back > content) {
+                if (*back == ' ' || *back == '\t' || *back == '\r' || *back == '\n') {
+                    back--;
+                    continue;
+                }
+                break;
+            }
+            int chars_scanned = 0;
+            const char *scan = back;
+            while (scan > content && chars_scanned < 150) {
+                char c = *scan;
+                if (c == ';' || c == '{' || c == '}') {
+                    break;
+                }
+                if (scan - 3 >= content && strncmp(scan - 2, "new", 3) == 0) {
+                    char prev = *(scan - 3);
+                    char next = *scan;
+                    if ((prev == ' ' || prev == '\t' || prev == '\r' || prev == '\n' || prev == '(' || prev == '=') && 
+                        (next == ' ' || next == '\t' || next == '\r' || next == '\n' || next == '<' || next == '(' || next == '{' || next == '[')) {
+                        is_init = 1;
+                        break;
+                    }
+                }
+                if (scan - 6 >= content && strncmp(scan - 5, "switch", 6) == 0) {
+                    char prev = *(scan - 6);
+                    char next = *scan;
+                    if ((prev == ' ' || prev == '\t' || prev == '\r' || prev == '\n' || prev == ')') && 
+                        (next == ' ' || next == '\t' || next == '\r' || next == '\n' || next == '{')) {
+                        is_init = 1;
+                        break;
+                    }
+                }
+                scan--;
+                chars_scanned++;
+            }
+            if (stack_depth < 256) {
+                brace_stack[stack_depth++] = is_init;
+            }
+            ptr++;
+            continue;
+        }
+        
+        if (*ptr == '}') {
+            if (stack_depth > 0) {
+                stack_depth--;
+            }
+            ptr++;
+            continue;
+        }
+        
+        // Semicolon check
+        if (*ptr == ';') {
+            int is_v1_error = 0;
+            const char *reason = "";
+            
+            // 1. Check for ,; pattern (semicolon immediately after comma, with optional space)
+            const char *prev_c = ptr - 1;
+            while (prev_c > content && (*prev_c == ' ' || *prev_c == '\t')) {
+                prev_c--;
+            }
+            if (prev_c > content && *prev_c == ',') {
+                is_v1_error = 1;
+                reason = "Incorrect semicolon appended after comma.";
+            }
+            
+            // 2. Check for new Type; followed by {
+            if (!is_v1_error) {
+                const char *next_sig = ptr + 1;
+                while (*next_sig != '\0' && (*next_sig == ' ' || *next_sig == '\t' || *next_sig == '\r' || *next_sig == '\n')) {
+                    next_sig++;
+                }
+                if (*next_sig == '{') {
+                    // Check if this line contains 'new'
+                    const char *line_start = ptr;
+                    while (line_start > content && *(line_start - 1) != '\n') {
+                        line_start--;
+                    }
+                    if (strstr(line_start, "new ") != NULL || strstr(line_start, "switch") != NULL) {
+                        is_v1_error = 1;
+                        reason = "Semicolon incorrectly placed between initialization expression and its block.";
+                    }
+                }
+            }
+            
+            // 3. Semicolons inside an active initializer block (at the top-level of the block)
+            if (!is_v1_error && stack_depth > 0 && brace_stack[stack_depth - 1] == 1) {
+                is_v1_error = 1;
+                reason = "Semicolon invalid inside an object/collection initializer block.";
+            }
+            
+            if (is_v1_error && line_num != last_reported_line) {
+                // Get line start to calculate column
+                const char *l_start = ptr;
+                while (l_start > content && *(l_start - 1) != '\n') {
+                    l_start--;
+                }
+                int col = (int)(ptr - l_start) + 1;
+                
+                char line_buf[1024];
+                get_line_at_ptr(content, ptr, line_buf, sizeof(line_buf));
+                
+                int idx = *issue_count;
+                if (idx < 100) {
+                    strcpy(issues[idx].file_path, file_path);
+                    issues[idx].line = line_num;
+                    issues[idx].column = col;
+                    strcpy(issues[idx].error_code, "V1_RECOVERY");
+                    strcpy(issues[idx].message, reason);
+                    strcpy(issues[idx].original_code, line_buf);
+                    
+                    // Create fixed code (omitting the semicolon)
+                    int ptr_offset = (int)(ptr - l_start);
+                    char fixed_buf[1024];
+                    strncpy(fixed_buf, line_buf, ptr_offset);
+                    fixed_buf[ptr_offset] = ' ';
+                    
+                    // Copy everything after semicolon
+                    const char *after_ptr = ptr + 1;
+                    char after_buf[512] = "";
+                    int ab_len = 0;
+                    while (*after_ptr != ' ' && *after_ptr != '\n' && *after_ptr != '\r' && ab_len < 511) {
+                        after_buf[ab_len++] = *after_ptr++;
+                    }
+                    after_buf[ab_len] = ' ';
+                    strcat(fixed_buf, after_buf);
+                    
+                    strcpy(issues[idx].fixed_code, fixed_buf);
+                    
+                    (*issue_count)++;
+                    found_issues++;
+                    last_reported_line = line_num;
+                }
+            }
+        }
+        
+        ptr++;
+    }
+    
+    return found_issues;
+}
+
 // Renders an ANSI highlighted substring of width, with correct space padding
 void print_highlighted_substring(const char *line, int width) {
     char plain[256];
@@ -261,6 +481,37 @@ int check_list_imports(const char *content, const char *file_path, ScannerIssue 
     return 0;
 }
 
+char get_next_significant_char(const char *ptr) {
+    if (!ptr) return '\0';
+    while (*ptr != '\0') {
+        if (*ptr == ' ' || *ptr == '\t' || *ptr == '\r' || *ptr == '\n') {
+            ptr++;
+            continue;
+        }
+        // Skip single-line comments
+        if (*ptr == '/' && *(ptr + 1) == '/') {
+            ptr += 2;
+            while (*ptr != '\0' && *ptr != '\n') {
+                ptr++;
+            }
+            continue;
+        }
+        // Skip multi-line comments
+        if (*ptr == '/' && *(ptr + 1) == '*') {
+            ptr += 2;
+            while (*ptr != '\0' && !(*ptr == '*' && *(ptr + 1) == '/')) {
+                ptr++;
+            }
+            if (*ptr != '\0') {
+                ptr += 2;
+            }
+            continue;
+        }
+        return *ptr;
+    }
+    return '\0';
+}
+
 // Check for missing semicolons (basic statement heuristic)
 int check_semicolons(const char *content, const char *file_path, ScannerIssue *issues, int *issue_count) {
     int found_issues = 0;
@@ -283,21 +534,91 @@ int check_semicolons(const char *content, const char *file_path, ScannerIssue *i
         }
         
         if (len > 3) {
-            if ((strstr(line_buf, "=") != NULL || strstr(line_buf, "Console.Write") != NULL || strstr(line_buf, "return ") != NULL || strstr(line_buf, "_repository.") != NULL) &&
-                line_buf[len - 1] != ';' && line_buf[len - 1] != '{' && line_buf[len - 1] != '}' && line_buf[len - 1] != ')' &&
-                strstr(line_buf, "//") == NULL && strstr(line_buf, "using ") == NULL) {
+            const char *start = line_buf;
+            while (*start == ' ' || *start == '\t') {
+                start++;
+            }
+            
+            // Skip comments and directives
+            if (*start == '\0' || *start == '#' || strncmp(start, "//", 2) == 0 || strncmp(start, "/*", 2) == 0) {
+                line_num++;
+                continue;
+            }
+            
+            // Skip keywords
+            int is_keyword = 0;
+            const char *keywords[] = {
+                "using", "namespace", "class", "struct", "interface", "enum",
+                "public", "private", "protected", "internal", "static", "void",
+                "if", "while", "for", "foreach", "catch", "switch", "try", "else"
+            };
+            for (int i = 0; i < (int)(sizeof(keywords) / sizeof(keywords[0])); i++) {
+                int kw_len = strlen(keywords[i]);
+                if (strncmp(start, keywords[i], kw_len) == 0) {
+                    char next_c = start[kw_len];
+                    if (next_c == '\0' || next_c == ' ' || next_c == '\t' || next_c == '(' || next_c == '{' || next_c == ')') {
+                        is_keyword = 1;
+                        break;
+                    }
+                }
+            }
+            
+            if (*start == '[') {
+                is_keyword = 1;
+            }
+            
+            if (!is_keyword) {
+                char last_char = line_buf[len - 1];
                 
-                int idx = *issue_count;
-                strcpy(issues[idx].file_path, file_path);
-                issues[idx].line = line_num;
-                issues[idx].column = len + 1;
-                strcpy(issues[idx].error_code, "CS1002");
-                sprintf(issues[idx].message, "Semicolon ';' expected.");
-                strcpy(issues[idx].original_code, line_buf);
-                sprintf(issues[idx].fixed_code, "%s;", line_buf);
-                
-                (*issue_count)++;
-                found_issues++;
+                // Only flag if the line doesn't end with allowed flow or list characters
+                if (last_char != ';' && last_char != '{' && last_char != '}' && last_char != ',' &&
+                    last_char != ':' && last_char != '>' && last_char != '<' && last_char != '(' &&
+                    last_char != '[' && last_char != ']' && last_char != '+' && last_char != '-' &&
+                    last_char != '*' && last_char != '/' && last_char != '&' && last_char != '|' &&
+                    last_char != '^' && last_char != '?' && last_char != '=' && last_char != '!') {
+                    
+                    // Check for unbalanced braces or parentheses on this single line
+                    int open_p = 0, open_b = 0, open_br = 0;
+                    int in_str = 0, in_chr = 0;
+                    for (int i = 0; start[i] != '\0'; i++) {
+                        if (in_str) {
+                            if (start[i] == '"' && (i == 0 || start[i-1] != '\\')) in_str = 0;
+                            continue;
+                        }
+                        if (in_chr) {
+                            if (start[i] == '\'' && (i == 0 || start[i-1] != '\\')) in_chr = 0;
+                            continue;
+                        }
+                        if (start[i] == '"') { in_str = 1; continue; }
+                        if (start[i] == '\'') { in_chr = 1; continue; }
+                        
+                        if (start[i] == '(') open_p++;
+                        if (start[i] == ')') open_p--;
+                        if (start[i] == '[') open_b++;
+                        if (start[i] == ']') open_b--;
+                        if (start[i] == '{') open_br++;
+                        if (start[i] == '}') open_br--;
+                    }
+                    
+                    // If all delimiters on this line are closed, we check lookahead
+                    if (open_p == 0 && open_b == 0 && open_br == 0) {
+                        char next_sig = get_next_significant_char(ptr);
+                        if (next_sig != '{' && next_sig != ',') {
+                            // High-probability complete C# statement missing a semicolon
+                            int idx = *issue_count;
+                            strcpy(issues[idx].file_path, file_path);
+                            issues[idx].line = line_num;
+                            issues[idx].column = len + 1;
+                            strcpy(issues[idx].error_code, "CS1002");
+                            sprintf(issues[idx].message, "Semicolon ';' expected.");
+                            strcpy(issues[idx].original_code, line_buf);
+                            sprintf(issues[idx].fixed_code, "%s;", line_buf);
+                            
+                            (*issue_count)++;
+                            found_issues++;
+                        }
+                    }
+                }
             }
         }
         line_num++;
@@ -411,6 +732,7 @@ void scan_file(const char *file_path, int fix_mode) {
     ScannerIssue issues[100];
     int issue_count = 0;
     
+    check_v1_recovery(content, file_path, issues, &issue_count);
     check_list_imports(content, file_path, issues, &issue_count);
     check_semicolons(content, file_path, issues, &issue_count);
     check_braces(content, file_path, issues, &issue_count);
