@@ -70,6 +70,51 @@ int check_empty_catch(const char *content, const char *file_path, ScannerIssue *
     int line_num = 1;
     while (*ptr != '\0') {
         if (*ptr == '\n') line_num++;
+        
+        // Skip comments and literals
+        if (*ptr == '/' && *(ptr + 1) == '/') {
+            ptr += 2;
+            while (*ptr != '\0' && *ptr != '\n') ptr++;
+            continue;
+        }
+        if (*ptr == '/' && *(ptr + 1) == '*') {
+            ptr += 2;
+            while (*ptr != '\0' && !(*ptr == '*' && *(ptr + 1) == '/')) {
+                if (*ptr == '\n') line_num++;
+                ptr++;
+            }
+            if (*ptr != '\0') ptr += 2;
+            continue;
+        }
+        if (*ptr == '"') {
+            ptr++;
+            while (*ptr != '\0' && *ptr != '"') {
+                if (*ptr == '\\' && *(ptr + 1) != '\0') {
+                    if (*(ptr + 1) == '\n') line_num++;
+                    ptr += 2;
+                } else {
+                    if (*ptr == '\n') line_num++;
+                    ptr++;
+                }
+            }
+            if (*ptr == '"') ptr++;
+            continue;
+        }
+        if (*ptr == '\'') {
+            ptr++;
+            while (*ptr != '\0' && *ptr != '\'') {
+                if (*ptr == '\\' && *(ptr + 1) != '\0') {
+                    if (*(ptr + 1) == '\n') line_num++;
+                    ptr += 2;
+                } else {
+                    if (*ptr == '\n') line_num++;
+                    ptr++;
+                }
+            }
+            if (*ptr == '\'') ptr++;
+            continue;
+        }
+        
         if (strncmp(ptr, "catch", 5) == 0 && (ptr == content || *(ptr - 1) == ' ' || *(ptr - 1) == '\n' || *(ptr - 1) == '\t' || *(ptr - 1) == '}')) {
             const char *sub = ptr + 5;
             while (*sub == ' ' || *sub == '\t' || *sub == '\n' || *sub == '\r') {
@@ -126,6 +171,51 @@ int check_class_name_pascal_case(const char *content, const char *file_path, Sca
     int line_num = 1;
     while (*ptr != '\0') {
         if (*ptr == '\n') line_num++;
+        
+        // Skip comments and literals
+        if (*ptr == '/' && *(ptr + 1) == '/') {
+            ptr += 2;
+            while (*ptr != '\0' && *ptr != '\n') ptr++;
+            continue;
+        }
+        if (*ptr == '/' && *(ptr + 1) == '*') {
+            ptr += 2;
+            while (*ptr != '\0' && !(*ptr == '*' && *(ptr + 1) == '/')) {
+                if (*ptr == '\n') line_num++;
+                ptr++;
+            }
+            if (*ptr != '\0') ptr += 2;
+            continue;
+        }
+        if (*ptr == '"') {
+            ptr++;
+            while (*ptr != '\0' && *ptr != '"') {
+                if (*ptr == '\\' && *(ptr + 1) != '\0') {
+                    if (*(ptr + 1) == '\n') line_num++;
+                    ptr += 2;
+                } else {
+                    if (*ptr == '\n') line_num++;
+                    ptr++;
+                }
+            }
+            if (*ptr == '"') ptr++;
+            continue;
+        }
+        if (*ptr == '\'') {
+            ptr++;
+            while (*ptr != '\0' && *ptr != '\'') {
+                if (*ptr == '\\' && *(ptr + 1) != '\0') {
+                    if (*(ptr + 1) == '\n') line_num++;
+                    ptr += 2;
+                } else {
+                    if (*ptr == '\n') line_num++;
+                    ptr++;
+                }
+            }
+            if (*ptr == '\'') ptr++;
+            continue;
+        }
+        
         if (strncmp(ptr, "class ", 6) == 0 && (ptr == content || *(ptr - 1) == ' ' || *(ptr - 1) == '\n' || *(ptr - 1) == '\t' || *(ptr - 1) == '}')) {
             const char *sub = ptr + 6;
             while (*sub == ' ' || *sub == '\t') sub++;
@@ -539,8 +629,53 @@ int check_semicolons(const char *content, const char *file_path, ScannerIssue *i
             line_buf[--len] = '\0';
         }
         
-        if (len > 3) {
-            const char *start = line_buf;
+        char clean_line[1024];
+        int in_str = 0, in_chr = 0;
+        int clean_len = 0;
+        int comment_idx = -1;
+        
+        for (int i = 0; line_buf[i] != '\0' && clean_len < 1023; ) {
+            if (in_str) {
+                if (line_buf[i] == '"' && (i == 0 || line_buf[i-1] != '\\')) in_str = 0;
+                clean_line[clean_len++] = line_buf[i++];
+                continue;
+            }
+            if (in_chr) {
+                if (line_buf[i] == ''' && (i == 0 || line_buf[i-1] != '\\')) in_chr = 0;
+                clean_line[clean_len++] = line_buf[i++];
+                continue;
+            }
+            if (line_buf[i] == '"') { in_str = 1; clean_line[clean_len++] = line_buf[i++]; continue; }
+            if (line_buf[i] == ''') { in_chr = 1; clean_line[clean_len++] = line_buf[i++]; continue; }
+            
+            // Check for single-line comment
+            if (line_buf[i] == '/' && line_buf[i+1] == '/') {
+                if (comment_idx == -1) comment_idx = i;
+                break; // Skip everything else in the line
+            }
+            
+            // Check for block comment start
+            if (line_buf[i] == '/' && line_buf[i+1] == '*') {
+                if (comment_idx == -1) comment_idx = i;
+                // Skip until block comment end or end of line
+                i += 2;
+                while (line_buf[i] != '\0' && !(line_buf[i] == '*' && line_buf[i+1] == '/')) {
+                    i++;
+                }
+                if (line_buf[i] != '\0') i += 2; // skip */
+                continue;
+            }
+            
+            clean_line[clean_len++] = line_buf[i++];
+        }
+        clean_line[clean_len] = '\0';
+        
+        while (clean_len > 0 && (clean_line[clean_len - 1] == ' ' || clean_line[clean_len - 1] == '\r' || clean_line[clean_len - 1] == '\t')) {
+            clean_line[--clean_len] = '\0';
+        }
+        
+        if (clean_len > 3) {
+            const char *start = clean_line;
             while (*start == ' ' || *start == '\t') {
                 start++;
             }
@@ -574,7 +709,7 @@ int check_semicolons(const char *content, const char *file_path, ScannerIssue *i
             }
             
             if (!is_keyword) {
-                char last_char = line_buf[len - 1];
+                char last_char = clean_line[clean_len - 1];
                 
                 // Only flag if the line doesn't end with allowed flow or list characters
                 if (last_char != ';' && last_char != '{' && last_char != '}' && last_char != ',' &&
@@ -585,18 +720,18 @@ int check_semicolons(const char *content, const char *file_path, ScannerIssue *i
                     
                     // Check for unbalanced braces or parentheses on this single line
                     int open_p = 0, open_b = 0, open_br = 0;
-                    int in_str = 0, in_chr = 0;
+                    int sub_in_str = 0, sub_in_chr = 0;
                     for (int i = 0; start[i] != '\0'; i++) {
-                        if (in_str) {
-                            if (start[i] == '"' && (i == 0 || start[i-1] != '\\')) in_str = 0;
+                        if (sub_in_str) {
+                            if (start[i] == '"' && (i == 0 || start[i-1] != '\\')) sub_in_str = 0;
                             continue;
                         }
-                        if (in_chr) {
-                            if (start[i] == '\'' && (i == 0 || start[i-1] != '\\')) in_chr = 0;
+                        if (sub_in_chr) {
+                            if (start[i] == ''' && (i == 0 || start[i-1] != '\\')) sub_in_chr = 0;
                             continue;
                         }
-                        if (start[i] == '"') { in_str = 1; continue; }
-                        if (start[i] == '\'') { in_chr = 1; continue; }
+                        if (start[i] == '"') { sub_in_str = 1; continue; }
+                        if (start[i] == ''') { sub_in_chr = 1; continue; }
                         
                         if (start[i] == '(') open_p++;
                         if (start[i] == ')') open_p--;
@@ -618,7 +753,21 @@ int check_semicolons(const char *content, const char *file_path, ScannerIssue *i
                             strcpy(issues[idx].error_code, "CS1002");
                             sprintf(issues[idx].message, "Semicolon ';' expected.");
                             strcpy(issues[idx].original_code, line_buf);
-                            sprintf(issues[idx].fixed_code, "%s;", line_buf);
+                            
+                            char fixed_buf[1024];
+                            if (comment_idx != -1) {
+                                strncpy(fixed_buf, line_buf, comment_idx);
+                                fixed_buf[comment_idx] = ' ';
+                                int f_len = strlen(fixed_buf);
+                                while (f_len > 0 && (fixed_buf[f_len - 1] == ' ' || fixed_buf[f_len - 1] == '\t')) {
+                                    fixed_buf[--f_len] = ' ';
+                                }
+                                strcat(fixed_buf, "; ");
+                                strcat(fixed_buf, line_buf + comment_idx);
+                            } else {
+                                sprintf(fixed_buf, "%s;", line_buf);
+                            }
+                            strcpy(issues[idx].fixed_code, fixed_buf);
                             
                             (*issue_count)++;
                             found_issues++;
@@ -639,6 +788,45 @@ int check_braces(const char *content, const char *file_path, ScannerIssue *issue
     const char *ptr = content;
     
     while (*ptr != '\0') {
+        // Skip comments and literals
+        if (*ptr == '/' && *(ptr + 1) == '/') {
+            ptr += 2;
+            while (*ptr != '\0' && *ptr != '\n') ptr++;
+            continue;
+        }
+        if (*ptr == '/' && *(ptr + 1) == '*') {
+            ptr += 2;
+            while (*ptr != '\0' && !(*ptr == '*' && *(ptr + 1) == '/')) {
+                ptr++;
+            }
+            if (*ptr != '\0') ptr += 2;
+            continue;
+        }
+        if (*ptr == '"') {
+            ptr++;
+            while (*ptr != '\0' && *ptr != '"') {
+                if (*ptr == '\\' && *(ptr + 1) != '\0') {
+                    ptr += 2;
+                } else {
+                    ptr++;
+                }
+            }
+            if (*ptr == '"') ptr++;
+            continue;
+        }
+        if (*ptr == '\'') {
+            ptr++;
+            while (*ptr != '\0' && *ptr != '\'') {
+                if (*ptr == '\\' && *(ptr + 1) != '\0') {
+                    ptr += 2;
+                } else {
+                    ptr++;
+                }
+            }
+            if (*ptr == '\'') ptr++;
+            continue;
+        }
+        
         if (*ptr == '{') open_count++;
         if (*ptr == '}') close_count++;
         ptr++;
@@ -970,12 +1158,12 @@ void run_interactive_ui(const char *dir_path) {
         printf("\033[1;35m├──────────────────────────────────────┴─────────────────────────────────┤\033[0m\n");
         printf("\033[1;35m│\033[1;33m STATUS: %-62s \033[1;35m│\033[0m\n", status_msg);
         printf("\033[1;35m└────────────────────────────────────────────────────────────────────────┘\033[0m\n");
-        printf("\033[1;37m [W/S] Navigate Files  [D/E] Preview Tab/Diagnostics  [F] Add Feature    \033[0m\n");
+        printf("\033[1;37m [W/S] Navigate Files  [D/E] Preview Tab/Diagnostics  [F/Q] Quick Add Feature    \033[0m\n");
         printf("\033[1;37m [Enter] View/Edit File (Nano Editor)  [R] Dry-Run Scan  [A] Auto-Repair \033[0m\n");
-        printf("\033[1;37m [ESC/Q] Quit Workspace CLI                                              \033[0m\n");
+        printf("\033[1;37m [ESC/X] Quit Workspace CLI                                              \033[0m\n");
         
         int key = read_key();
-        if (key == 27 || key == 'q' || key == 'Q') {
+        if (key == 27 || key == 'x' || key == 'X') {
             break;
         }
         
@@ -990,7 +1178,7 @@ void run_interactive_ui(const char *dir_path) {
         } else if (key == 'e' || key == 'E') {
             active_tab = 0;
             strcpy(status_msg, "Interactive file preview active.");
-        } else if (key == 'f' || key == 'F') {
+        } else if (key == 'f' || key == 'F' || key == 'q' || key == 'Q') {
             active_tab = 2;
             strcpy(status_msg, "AI NLP Feature hub loaded. Choose [1], [2], or [3] to inject.");
         } else if (key == 'r' || key == 'R') {
@@ -1417,6 +1605,44 @@ void run_suggest_mode(const char *dir_path) {
     printf("%s================================================================%s\n\n", COLOR_CYAN, COLOR_RESET);
 }
 
+void apply_command_line_qadd(const char *dir_path, int index) {
+    char files_arr[100][256];
+    int count = 0;
+    collect_cs_files(dir_path, files_arr, &count);
+    if (count == 0) {
+        printf("[QADD] No C# source files found in target directory: %s\n", dir_path);
+        return;
+    }
+    // Inject into the first found .cs file or Program.cs if possible
+    int target_idx = 0;
+    for (int i = 0; i < count; i++) {
+        if (strstr(files_arr[i], "Program.cs") != NULL) {
+            target_idx = i;
+            break;
+        }
+    }
+    
+    FILE *f = fopen(files_arr[target_idx], "a");
+    if (!f) {
+        printf("[QADD] Failed to open file %s for appending\n", files_arr[target_idx]);
+        return;
+    }
+    
+    if (index == 1) {
+        fprintf(f, "\n        public decimal CalculateDiscount(decimal total, bool isVIP) {\n            if (isVIP) return total * 0.15m;\n            return total > 100 ? total * 0.05m : 0m;\n        }\n");
+        printf("[QADD] Successfully injected 'CalculateDiscount' into %s\n", files_arr[target_idx]);
+    } else if (index == 2) {
+        fprintf(f, "\n        public bool ValidateOrder(string id, decimal amt) {\n            if (string.IsNullOrEmpty(id)) return false;\n            return amt > 0;\n        }\n");
+        printf("[QADD] Successfully injected 'ValidateOrder' into %s\n", files_arr[target_idx]);
+    } else if (index == 3) {
+        fprintf(f, "\n        public void LogMessage(string msg, string lvl = \"INFO\") {\n            Console.WriteLine($\"[{DateTime.Now}] [{lvl}] {msg}\");\n        }\n");
+        printf("[QADD] Successfully injected 'LogMessage' into %s\n", files_arr[target_idx]);
+    } else {
+        printf("[QADD] Invalid suggestion index %d. Use 1, 2, or 3.\n", index);
+    }
+    fclose(f);
+}
+
 int main(int argc, char *argv[]) {
     init_terminal();
     
@@ -1424,6 +1650,7 @@ int main(int argc, char *argv[]) {
     int fix_mode = 0;
     int ui_mode = 0;
     int suggest_mode = 0;
+    int qadd_index = 0;
     
     if (argc == 1) {
         // Double-clicked or launched with no arguments: defaults to booting interactive UI mode
@@ -1436,6 +1663,10 @@ int main(int argc, char *argv[]) {
                 ui_mode = 1;
             } else if (strcmp(argv[i], "--suggest") == 0 || strcmp(argv[i], "-s") == 0) {
                 suggest_mode = 1;
+            } else if (strcmp(argv[i], "--qadd") == 0 || strcmp(argv[i], "-q") == 0) {
+                if (i + 1 < argc) {
+                    qadd_index = atoi(argv[++i]);
+                }
             } else {
                 strcpy(target_dir, argv[i]);
             }
@@ -1447,8 +1678,13 @@ int main(int argc, char *argv[]) {
         return 0;
     }
     
-    if (suggest_mode) {
-        run_suggest_mode(target_dir);
+    if (suggest_mode || qadd_index > 0) {
+        if (suggest_mode) {
+            run_suggest_mode(target_dir);
+        }
+        if (qadd_index > 0) {
+            apply_command_line_qadd(target_dir, qadd_index);
+        }
         return 0;
     }
     

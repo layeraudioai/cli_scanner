@@ -57,5 +57,6 @@ void print_highlighted_substring(const char *line, int width);
 void apply_auto_repair(const char *file_path, ScannerIssue *issues, int issue_count);
 void run_interactive_ui(const char *dir_path);
 void run_suggest_mode(const char *dir_path);
+void apply_command_line_qadd(const char *dir_path, int index);
 
 #endif // CLI_SCANNER_H
