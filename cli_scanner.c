@@ -757,10 +757,10 @@ int check_semicolons(const char *content, const char *file_path, ScannerIssue *i
                             char fixed_buf[1024];
                             if (comment_idx != -1) {
                                 strncpy(fixed_buf, line_buf, comment_idx);
-                                fixed_buf[comment_idx] = ' ';
+                                fixed_buf[comment_idx] = '\0';
                                 int f_len = strlen(fixed_buf);
                                 while (f_len > 0 && (fixed_buf[f_len - 1] == ' ' || fixed_buf[f_len - 1] == '\t')) {
-                                    fixed_buf[--f_len] = ' ';
+                                    fixed_buf[--f_len] = '\0';
                                 }
                                 strcat(fixed_buf, "; ");
                                 strcat(fixed_buf, line_buf + comment_idx);
@@ -1197,28 +1197,16 @@ void run_interactive_ui(const char *dir_path) {
             }
         } else if (key == '1' && active_tab == 2 && file_count > 0) {
             // Inject discount
-            FILE *f = fopen(files_arr[selected_idx], "a");
-            if (f) {
-                fprintf(f, "\n        public decimal CalculateDiscount(decimal total, bool isVIP) {\n            if (isVIP) return total * 0.15m;\n            return total > 100 ? total * 0.05m : 0m;\n        }\n");
-                fclose(f);
-                sprintf(status_msg, "Injected CalculateDiscount into %s!", files_arr[selected_idx]);
-            }
+            inject_code_inside_class(files_arr[selected_idx], "\n        public decimal CalculateDiscount(decimal total, bool isVIP) {\n            if (isVIP) return total * 0.15m;\n            return total > 100 ? total * 0.05m : 0m;\n        }\n");
+            sprintf(status_msg, "Injected CalculateDiscount into %s!", files_arr[selected_idx]);
         } else if (key == '2' && active_tab == 2 && file_count > 0) {
             // Inject validator
-            FILE *f = fopen(files_arr[selected_idx], "a");
-            if (f) {
-                fprintf(f, "\n        public bool ValidateOrder(string id, decimal amt) {\n            if (string.IsNullOrEmpty(id)) return false;\n            return amt > 0;\n        }\n");
-                fclose(f);
-                sprintf(status_msg, "Injected ValidateOrder into %s!", files_arr[selected_idx]);
-            }
+            inject_code_inside_class(files_arr[selected_idx], "\n        public bool ValidateOrder(string id, decimal amt) {\n            if (string.IsNullOrEmpty(id)) return false;\n            return amt > 0;\n        }\n");
+            sprintf(status_msg, "Injected ValidateOrder into %s!", files_arr[selected_idx]);
         } else if (key == '3' && active_tab == 2 && file_count > 0) {
             // Inject logger
-            FILE *f = fopen(files_arr[selected_idx], "a");
-            if (f) {
-                fprintf(f, "\n        public void LogMessage(string msg, string lvl = \"INFO\") {\n            Console.WriteLine($\"[{DateTime.Now}] [{lvl}] {msg}\");\n        }\n");
-                fclose(f);
-                sprintf(status_msg, "Injected LogMessage into %s!", files_arr[selected_idx]);
-            }
+            inject_code_inside_class(files_arr[selected_idx], "\n        public void LogMessage(string msg, string lvl = \"INFO\") {\n            Console.WriteLine($\"[{DateTime.Now}] [{lvl}] {msg}\");\n        }\n");
+            sprintf(status_msg, "Injected LogMessage into %s!", files_arr[selected_idx]);
         } else if (key == 13 || key == 10) { // Enter key -> Boot Nano-like text editor
             if (file_count > 0) {
                 if (load_file_for_editing(files_arr[selected_idx])) {
@@ -1605,6 +1593,66 @@ void run_suggest_mode(const char *dir_path) {
     printf("%s================================================================%s\n\n", COLOR_CYAN, COLOR_RESET);
 }
 
+void inject_code_inside_class(const char *file_path, const char *code_to_inject) {
+    FILE *f = fopen(file_path, "r");
+    if (!f) return;
+    
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    char *content = malloc(size + 1);
+    if (!content) {
+        fclose(f);
+        return;
+    }
+    
+    long read_bytes = fread(content, 1, size, f);
+    content[read_bytes] = '\0';
+    fclose(f);
+    
+    int last_brace_idx = -1;
+    for (int i = (int)read_bytes - 1; i >= 0; i--) {
+        if (content[i] == '}') {
+            last_brace_idx = i;
+            break;
+        }
+    }
+    
+    if (last_brace_idx == -1) {
+        f = fopen(file_path, "a");
+        if (f) {
+            fprintf(f, "%s", code_to_inject);
+            fclose(f);
+        }
+        free(content);
+        return;
+    }
+    
+    int second_last_brace_idx = -1;
+    for (int i = last_brace_idx - 1; i >= 0; i--) {
+        if (content[i] == '}') {
+            second_last_brace_idx = i;
+            break;
+        }
+    }
+    
+    int target_insert_idx = last_brace_idx;
+    if (second_last_brace_idx != -1) {
+        target_insert_idx = second_last_brace_idx;
+    }
+    
+    f = fopen(file_path, "w");
+    if (f) {
+        fwrite(content, 1, target_insert_idx, f);
+        fprintf(f, "%s", code_to_inject);
+        fwrite(content + target_insert_idx, 1, read_bytes - target_insert_idx, f);
+        fclose(f);
+    }
+    
+    free(content);
+}
+
 void apply_command_line_qadd(const char *dir_path, int index) {
     char files_arr[100][256];
     int count = 0;
@@ -1622,25 +1670,18 @@ void apply_command_line_qadd(const char *dir_path, int index) {
         }
     }
     
-    FILE *f = fopen(files_arr[target_idx], "a");
-    if (!f) {
-        printf("[QADD] Failed to open file %s for appending\n", files_arr[target_idx]);
-        return;
-    }
-    
     if (index == 1) {
-        fprintf(f, "\n        public decimal CalculateDiscount(decimal total, bool isVIP) {\n            if (isVIP) return total * 0.15m;\n            return total > 100 ? total * 0.05m : 0m;\n        }\n");
+        inject_code_inside_class(files_arr[target_idx], "\n        public decimal CalculateDiscount(decimal total, bool isVIP) {\n            if (isVIP) return total * 0.15m;\n            return total > 100 ? total * 0.05m : 0m;\n        }\n");
         printf("[QADD] Successfully injected 'CalculateDiscount' into %s\n", files_arr[target_idx]);
     } else if (index == 2) {
-        fprintf(f, "\n        public bool ValidateOrder(string id, decimal amt) {\n            if (string.IsNullOrEmpty(id)) return false;\n            return amt > 0;\n        }\n");
+        inject_code_inside_class(files_arr[target_idx], "\n        public bool ValidateOrder(string id, decimal amt) {\n            if (string.IsNullOrEmpty(id)) return false;\n            return amt > 0;\n        }\n");
         printf("[QADD] Successfully injected 'ValidateOrder' into %s\n", files_arr[target_idx]);
     } else if (index == 3) {
-        fprintf(f, "\n        public void LogMessage(string msg, string lvl = \"INFO\") {\n            Console.WriteLine($\"[{DateTime.Now}] [{lvl}] {msg}\");\n        }\n");
+        inject_code_inside_class(files_arr[target_idx], "\n        public void LogMessage(string msg, string lvl = \"INFO\") {\n            Console.WriteLine($\"[{DateTime.Now}] [{lvl}] {msg}\");\n        }\n");
         printf("[QADD] Successfully injected 'LogMessage' into %s\n", files_arr[target_idx]);
     } else {
         printf("[QADD] Invalid suggestion index %d. Use 1, 2, or 3.\n", index);
     }
-    fclose(f);
 }
 
 int main(int argc, char *argv[]) {

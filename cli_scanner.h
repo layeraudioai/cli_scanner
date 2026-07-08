@@ -11,8 +11,6 @@
     #define PATH_SEPARATOR '\\'
     #include <windows.h>
     #include <conio.h>
-    int _getch(void);
-    int getch(void);
 #else
     #define PLATFORM_NAME "Linux/macOS (POSIX)"
     #define PATH_SEPARATOR '/'
@@ -58,5 +56,6 @@ void apply_auto_repair(const char *file_path, ScannerIssue *issues, int issue_co
 void run_interactive_ui(const char *dir_path);
 void run_suggest_mode(const char *dir_path);
 void apply_command_line_qadd(const char *dir_path, int index);
+void inject_code_inside_class(const char *file_path, const char *code_to_inject);
 
 #endif // CLI_SCANNER_H
