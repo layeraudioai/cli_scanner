@@ -1,5 +1,6 @@
 #include "cli_scanner.hpp"
 #include "renderer.hpp" // C++ header for our donut
+#include <chrono>      // For performance benchmark timing
 #include <sys/ioctl.h> // For getting terminal size on POSIX
 #include <string>
 
@@ -8,6 +9,13 @@
 
 char edit_lines[MAX_LINES][MAX_LINE_LEN];
 int edit_line_count = 0;
+
+typedef struct {
+    int fps_cap;
+    int term_cols;
+    int term_rows;
+    bool use_simple_colors;
+} PerformanceSettings;
 
 volatile int g_current_note_freq = 0;
 
@@ -1441,7 +1449,7 @@ void draw_bgm_visualizer_fb(FrameBuffer& fb, int y, int x, int width) {
 }
 
 // Interactive ncurses-style terminal dashboard and Nano editor emulator
-void run_interactive_ui(const char *dir_path) {
+void run_interactive_ui(const char *dir_path, const PerformanceSettings& settings) {
     char files_arr[100][256];
     int file_count = 0;
     collect_source_files(dir_path, files_arr, &file_count);
@@ -1459,20 +1467,9 @@ void run_interactive_ui(const char *dir_path) {
     
     while (1) {
         // Get terminal dimensions
-        int term_cols = 80, term_rows = 24;
-#ifdef _WIN32
-        CONSOLE_SCREEN_BUFFER_INFO csbi;
-        GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-        term_cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-        term_rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
-#else
-        struct winsize w;
-        ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-        term_cols = w.ws_col;
-        term_rows = w.ws_row;
-#endif
-        if (term_cols < 80) term_cols = 80;
-        if (term_rows < 24) term_rows = 24;
+        // Use dimensions from performance settings
+        int term_cols = settings.term_cols;
+        int term_rows = settings.term_rows;
         
         FrameBuffer fb(term_cols, term_rows);
 
@@ -1573,9 +1570,9 @@ void run_interactive_ui(const char *dir_path) {
             // Add other key handlers here (Enter, 'a', etc.)
         }
     #ifdef _WIN32
-            Sleep(16); // ~60 FPS
+            Sleep(1000 / settings.fps_cap);
     #else
-            usleep(16000);
+            usleep(1000000 / settings.fps_cap);
     #endif
         }
         // Clear screen on exit
@@ -2681,6 +2678,71 @@ void draw_bgm_visualizer(void) {
     printf("%s\033[1;34m║\033[0m\n", COLOR_RESET);
 }
 
+long run_performance_benchmark() {
+    printf("%sCalibrating performance for your terminal (1.33s)...%s\n", COLOR_YELLOW, COLOR_RESET);
+    long frame_count = 0;
+    float A = 0.0f, B = 0.0f;
+    FrameBuffer fb(80, 24); // Use a standard small size for benchmark consistency
+
+    // Use C++ chrono for timing
+    auto start_time = std::chrono::high_resolution_clock::now();
+    while (true) {
+        auto current_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = current_time - start_time;
+        if (elapsed.count() >= 1.33) {
+            break;
+        }
+
+        // Simulate a render cycle without printing
+        fb.clear();
+        render_donut_3d(fb, A, B);
+        A += 0.04f;
+        B += 0.02f;
+
+        // Simulate the expensive part of render_framebuffer (string building)
+        size_t buffer_size = (fb.cols * fb.rows * 12) + 50;
+        char* frame_str = (char*)malloc(buffer_size);
+        if (!frame_str) continue;
+        char* p = frame_str;
+        int last_color_pair = -1;
+        for (int y = 0; y < fb.rows; ++y) {
+            for (int x = 0; x < fb.cols; ++x) {
+                const auto& cell = fb.buffer[y][x];
+                if (cell.color_pair != last_color_pair) {
+                    const char* color_code = "\033[0m"; // Simplified
+                    size_t len = strlen(color_code);
+                    memcpy(p, color_code, len);
+                    p += len;
+                    last_color_pair = cell.color_pair;
+                }
+                *p++ = cell.ch;
+            }
+            *p++ = '\n';
+        }
+        free(frame_str);
+
+        frame_count++;
+    }
+
+    return frame_count;
+}
+
+void get_terminal_size(int& cols, int& rows) {
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+    cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+#else
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    cols = w.ws_col;
+    rows = w.ws_row;
+#endif
+    if (cols < 80) cols = 80;
+    if (rows < 24) rows = 24;
+}
+
 
 int main(int argc, char *argv[]) { // NOLINT(build/classic_main)
     init_terminal();
@@ -2755,7 +2817,36 @@ int main(int argc, char *argv[]) { // NOLINT(build/classic_main)
         if (io_mode) {
             run_io_chat_ui(target_dir);
         } else {
-            run_interactive_ui(target_dir);
+            long score = run_performance_benchmark();
+            double fps = score / 1.33;
+
+            PerformanceSettings settings;
+            int term_cols, term_rows;
+            get_terminal_size(term_cols, term_rows);
+
+            if (fps > 400) { // High-end
+                printf("%s✔ High-performance terminal detected (%.0f FPS). Using full resolution and 60 FPS cap.%s\n", COLOR_GREEN, fps, COLOR_RESET);
+                settings = {60, term_cols, term_rows, false};
+            } else if (fps > 150) { // Medium
+                printf("%s✔ Standard terminal detected (%.0f FPS). Capping resolution and 30 FPS.%s\n", COLOR_CYAN, fps, COLOR_RESET);
+                settings = {30, (term_cols > 120 ? 120 : term_cols), (term_rows > 45 ? 45 : term_rows), false};
+            } else { // Low-end
+                printf("%s! Slower terminal detected (%.0f FPS). Using 80x24 resolution and 15 FPS cap.%s\n", COLOR_YELLOW, fps, COLOR_RESET);
+                settings = {15, 80, 24, true};
+            }
+
+            printf("Press [Enter] to launch UI...");
+            fflush(stdout);
+            char dummy[16];
+            fgets(dummy, sizeof(dummy), stdin);
+
+            // The color simplification logic is not yet implemented in render_framebuffer,
+            // but the setting is ready for future use.
+            if (settings.use_simple_colors) {
+                // This is where you would modify the render_framebuffer to use fewer colors.
+            }
+
+            run_interactive_ui(target_dir, settings);
         }
         stop_music_engine();
         return 0;
