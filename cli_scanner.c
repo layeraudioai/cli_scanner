@@ -321,10 +321,12 @@ int check_v1_recovery(const char *content, const char *file_path, ScannerIssue *
                 }
             }
             
+            int replace_with_comma = 0;
             // 3. Semicolons inside an active initializer block (at the top-level of the block)
             if (!is_v1_error && stack_depth > 0 && brace_stack[stack_depth - 1] == 1) {
                 is_v1_error = 1;
                 reason = "Semicolon invalid inside an object/collection initializer block.";
+                replace_with_comma = 1;
             }
             
             if (is_v1_error && line_num != last_reported_line) {
@@ -352,6 +354,10 @@ int check_v1_recovery(const char *content, const char *file_path, ScannerIssue *
                     char fixed_buf[1024];
                     strncpy(fixed_buf, line_buf, ptr_offset);
                     fixed_buf[ptr_offset] = ' ';
+                    
+                    if (replace_with_comma) {
+                        strcat(fixed_buf, ",");
+                    }
                     
                     // Copy everything after semicolon
                     const char *after_ptr = ptr + 1;
@@ -881,7 +887,7 @@ void run_interactive_ui(const char *dir_path) {
         // Render Dashboard
         printf("\033[2J\033[H"); // Clear screen & home cursor
         printf("\033[1;35m┌────────────────────────────────────────────────────────────────────────┐\033[0m\n");
-        printf("\033[1;35m│\033[1;37m       C# INTERACTIVE TERMINAL COMPILER-EMULATOR & NANO EDITOR        \033[1;35m│\033[0m\n");
+        printf("\033[1;35m│\033[1;37m   C# INTERACTIVE TERMINAL COMPILER-EMULATOR (RELEASE 3 ACTIVE)    \033[1;35m│\033[0m\n");
         printf("\033[1;35m├──────────────────────────────────────┬─────────────────────────────────┤\033[0m\n");
         printf("\033[1;35m│\033[1;36m C# WORKSPACE FILE EXPLORER           \033[1;35m│\033[1;36m INTERACTIVE INSPECTOR & PREVIEW   \033[1;35m│\033[0m\n");
         printf("\033[1;35m├──────────────────────────────────────┼─────────────────────────────────┤\033[0m\n");
@@ -1447,7 +1453,7 @@ int main(int argc, char *argv[]) {
     }
     
     printf("\n%s================================================================%s\n", COLOR_BLUE, COLOR_RESET);
-    printf("%s  C# PROJECT INTELLIGENCE & AUTO-REPAIR CLI SCANNER (C EDITION)  %s\n", COLOR_WHITE, COLOR_RESET);
+    printf("%s  C# PROJECT INTELLIGENCE & AUTO-REPAIR CLI SCANNER (v3.0 RELEASE) %s\n", COLOR_WHITE, COLOR_RESET);
     printf("%s================================================================%s\n", COLOR_BLUE, COLOR_RESET);
     printf("Compiled for: %s%s%s | Mode: Standalone Code Intelligence\n\n", COLOR_CYAN, PLATFORM_NAME, COLOR_RESET);
     
