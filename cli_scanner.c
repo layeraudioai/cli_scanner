@@ -443,7 +443,7 @@ int check_v1_recovery(const char *content, const char *file_path, ScannerIssue *
                     int ptr_offset = (int)(ptr - l_start);
                     char fixed_buf[1024];
                     strncpy(fixed_buf, line_buf, ptr_offset);
-                    fixed_buf[ptr_offset] = ' ';
+                    fixed_buf[ptr_offset] = '\0';
                     
                     if (replace_with_comma) {
                         strcat(fixed_buf, ",");
@@ -453,10 +453,10 @@ int check_v1_recovery(const char *content, const char *file_path, ScannerIssue *
                     const char *after_ptr = ptr + 1;
                     char after_buf[512] = "";
                     int ab_len = 0;
-                    while (*after_ptr != ' ' && *after_ptr != '\n' && *after_ptr != '\r' && ab_len < 511) {
+                    while (*after_ptr != '\0' && *after_ptr != '\n' && *after_ptr != '\r' && ab_len < 511) {
                         after_buf[ab_len++] = *after_ptr++;
                     }
-                    after_buf[ab_len] = ' ';
+                    after_buf[ab_len] = '\0';
                     strcat(fixed_buf, after_buf);
                     
                     strcpy(issues[idx].fixed_code, fixed_buf);
@@ -641,12 +641,12 @@ int check_semicolons(const char *content, const char *file_path, ScannerIssue *i
                 continue;
             }
             if (in_chr) {
-                if (line_buf[i] == ''' && (i == 0 || line_buf[i-1] != '\\')) in_chr = 0;
+                if (line_buf[i] == '\'' && (i == 0 || line_buf[i-1] != '\\')) in_chr = 0;
                 clean_line[clean_len++] = line_buf[i++];
                 continue;
             }
             if (line_buf[i] == '"') { in_str = 1; clean_line[clean_len++] = line_buf[i++]; continue; }
-            if (line_buf[i] == ''') { in_chr = 1; clean_line[clean_len++] = line_buf[i++]; continue; }
+            if (line_buf[i] == '\'') { in_chr = 1; clean_line[clean_len++] = line_buf[i++]; continue; }
             
             // Check for single-line comment
             if (line_buf[i] == '/' && line_buf[i+1] == '/') {
@@ -727,11 +727,11 @@ int check_semicolons(const char *content, const char *file_path, ScannerIssue *i
                             continue;
                         }
                         if (sub_in_chr) {
-                            if (start[i] == ''' && (i == 0 || start[i-1] != '\\')) sub_in_chr = 0;
+                            if (start[i] == '\'' && (i == 0 || start[i-1] != '\\')) sub_in_chr = 0;
                             continue;
                         }
                         if (start[i] == '"') { sub_in_str = 1; continue; }
-                        if (start[i] == ''') { sub_in_chr = 1; continue; }
+                        if (start[i] == '\'') { sub_in_chr = 1; continue; }
                         
                         if (start[i] == '(') open_p++;
                         if (start[i] == ')') open_p--;
@@ -1551,7 +1551,7 @@ void run_suggest_mode(const char *dir_path) {
         printf("    %sclass%s OrderValidator {\n", COLOR_MAGENTA, COLOR_RESET);
         printf("        %spublic bool%s Validate(Order order) {\n", COLOR_MAGENTA, COLOR_RESET);
         printf("            %sif%s (order.TotalAmount <= 0) %sreturn false%s;\n", COLOR_MAGENTA, COLOR_RESET, COLOR_MAGENTA, COLOR_RESET);
-        printf("            %sreturn true%s;\n", COLOR_MAGENTA, COLOR_RESET, COLOR_MAGENTA, COLOR_RESET);
+        printf("            %sreturn true%s;\n", COLOR_MAGENTA, COLOR_RESET);
         printf("        }\n");
         printf("    }\n\n");
         
