@@ -54,8 +54,9 @@ int check_class_name_pascal_case(const char *content, const char *file_path, Sca
 void print_highlighted_substring(const char *line, int width);
 void apply_auto_repair(const char *file_path, ScannerIssue *issues, int issue_count);
 void run_interactive_ui(const char *dir_path);
-void run_suggest_mode(const char *dir_path);
-void apply_command_line_qadd(const char *dir_path, int index);
+void run_suggest_mode(const char *dir_path, const char *suggest_query);
+void apply_command_line_qadd(const char *dir_path, const char *qadd_query);
 void inject_code_inside_class(const char *file_path, const char *code_to_inject);
+int contains_case_insensitive(const char *haystack, const char *needle);
 
 #endif // CLI_SCANNER_H
