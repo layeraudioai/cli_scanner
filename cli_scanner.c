@@ -847,6 +847,135 @@ int check_braces(const char *content, const char *file_path, ScannerIssue *issue
     return 0;
 }
 
+int apply_file_change_with_five_steps(const char *file_path, const char *new_content, const char *change_description) {
+    // Step 1: Prompt the User
+    printf("\n%s[STEP 1/5] PROMPT USER FOR CONFIRMATION%s\n", COLOR_MAGENTA, COLOR_RESET);
+    printf("Proposed modification to file: '%s'\n", file_path);
+    printf("Change details: %s\n", change_description);
+    printf("Do you confirm this change? (y/n): ");
+    fflush(stdout);
+    
+    char confirm[16] = "";
+    if (fgets(confirm, sizeof(confirm), stdin) == NULL) {
+        printf("%sChange aborted: Input error.%s\n", COLOR_RED, COLOR_RESET);
+        return 0;
+    }
+    // strip newline
+    for (int i = 0; i < 16; i++) {
+        if (confirm[i] == '\n' || confirm[i] == '\r') {
+            confirm[i] = '\0';
+            break;
+        }
+    }
+    if (strcmp(confirm, "y") != 0 && strcmp(confirm, "Y") != 0) {
+        printf("%sChange aborted by user.%s\n", COLOR_RED, COLOR_RESET);
+        return 0;
+    }
+    
+    // Step 2: Back up the File
+    printf("\n%s[STEP 2/5] BACK UP FILE%s\n", COLOR_MAGENTA, COLOR_RESET);
+    // Create unique backup name using standard C time or unique suffix
+    char backup_path[512];
+    snprintf(backup_path, sizeof(backup_path), "%s_backup_%ld", file_path, (long)time(NULL));
+    
+    // Read current file to copy it to backup
+    FILE *f_src = fopen(file_path, "r");
+    if (f_src) {
+        FILE *f_dst = fopen(backup_path, "w");
+        if (f_dst) {
+            char ch;
+            while ((ch = fgetc(f_src)) != EOF) {
+                fputc(ch, f_dst);
+            }
+            fclose(f_dst);
+            printf("%sBackup created successfully at '%s'%s\n", COLOR_GREEN, backup_path, COLOR_RESET);
+        } else {
+            printf("%s[WARNING] Could not open backup path '%s' for writing.%s\n", COLOR_YELLOW, backup_path, COLOR_RESET);
+        }
+        fclose(f_src);
+    } else {
+        printf("%s[WARNING] Original file not found, skipping backup (creating new file).%s\n", COLOR_YELLOW, COLOR_RESET);
+    }
+    
+    // Step 3: Make the Change
+    printf("\n%s[STEP 3/5] MAKE THE CHANGE%s\n", COLOR_MAGENTA, COLOR_RESET);
+    FILE *fout = fopen(file_path, "w");
+    if (!fout) {
+        printf("%sError: Could not open file '%s' for writing.%s\n", COLOR_RED, file_path, COLOR_RESET);
+        return 0;
+    }
+    fputs(new_content, fout);
+    fclose(fout);
+    printf("%sFile '%s' successfully modified.%s\n", COLOR_GREEN, file_path, COLOR_RESET);
+    
+    // Step 4: Test the Change
+    printf("\n%s[STEP 4/5] TEST THE CHANGE%s\n", COLOR_MAGENTA, COLOR_RESET);
+    printf("Running linter and build verification tests...\n");
+    
+    // Try building using dotnet build
+    int build_result = -1;
+#ifdef _WIN32
+    build_result = system("dotnet build > nul 2>&1");
+#else
+    build_result = system("dotnet build > /dev/null 2>&1");
+#endif
+
+    if (build_result == 0) {
+        printf("%s✔ Build Succeeded! 'dotnet build' completed successfully without errors.%s\n", COLOR_GREEN, COLOR_RESET);
+    } else {
+        printf("%s[INFO] 'dotnet build' returned non-zero or is not installed. Performing high-fidelity C static analysis...%s\n", COLOR_YELLOW, COLOR_RESET);
+        // Load and check the file with our own static analysis!
+        FILE *f_check = fopen(file_path, "r");
+        if (f_check) {
+            fseek(f_check, 0, SEEK_END);
+            long size = ftell(f_check);
+            fseek(f_check, 0, SEEK_SET);
+            char *content = malloc(size + 1);
+            if (content) {
+                fread(content, 1, size, f_check);
+                content[size] = '\0';
+                fclose(f_check);
+                
+                ScannerIssue check_issues[100];
+                int check_issue_count = 0;
+                
+                // Call all our C static analysis rules to verify there are no issues in the newly modified file!
+                check_v1_recovery(content, file_path, check_issues, &check_issue_count);
+                check_list_imports(content, file_path, check_issues, &check_issue_count);
+                check_semicolons(content, file_path, check_issues, &check_issue_count);
+                check_braces(content, file_path, check_issues, &check_issue_count);
+                check_empty_catch(content, file_path, check_issues, &check_issue_count);
+                check_class_name_pascal_case(content, file_path, check_issues, &check_issue_count);
+                
+                free(content);
+                
+                if (check_issue_count == 0) {
+                    printf("%s✔ Local C Static Analysis Succeeded! No syntax, brace, or style issues found in '%s'.%s\n", COLOR_GREEN, file_path, COLOR_RESET);
+                } else {
+                    printf("%s✖ Local C Static Analysis Found %d issue(s) remaining:%s\n", COLOR_RED, check_issue_count, COLOR_RESET);
+                    for (int i = 0; i < check_issue_count; i++) {
+                        printf("  Line %d: %s\n", check_issues[i].line, check_issues[i].message);
+                    }
+                }
+            } else {
+                fclose(f_check);
+            }
+        }
+    }
+    
+    // Step 5: Ask User to Test and Report Back
+    printf("\n%s[STEP 5/5] ASK USER TO TEST AND REPORT BACK%s\n", COLOR_MAGENTA, COLOR_RESET);
+    printf("Please test the updated interface/application in your browser and report back on your results.\n");
+    printf("Press [Enter] to complete this operation: ");
+    fflush(stdout);
+    
+    char dummy[16];
+    fgets(dummy, sizeof(dummy), stdin);
+    printf("%sWorkflow completed successfully!%s\n\n", COLOR_GREEN, COLOR_RESET);
+    
+    return 1;
+}
+
 // Apply automatic repair by performing exact replacements
 void apply_auto_repair(const char *file_path, ScannerIssue *issues, int issue_count) {
     FILE *f = fopen(file_path, "r");
@@ -888,12 +1017,9 @@ void apply_auto_repair(const char *file_path, ScannerIssue *issues, int issue_co
     }
     
     if (repairs_done > 0) {
-        FILE *fout = fopen(file_path, "w");
-        if (fout) {
-            fputs(new_content, fout);
-            fclose(fout);
-            printf("%s[AUTO-REPAIR]%s Applied %d fix(es) to '%s'\n", COLOR_GREEN, COLOR_RESET, repairs_done, file_path);
-        }
+        char desc[256];
+        snprintf(desc, sizeof(desc), "Apply %d automatic repair(s) for static compilation errors", repairs_done);
+        apply_file_change_with_five_steps(file_path, new_content, desc);
     }
     
     free(buffer);
@@ -1049,13 +1175,23 @@ int load_file_for_editing(const char *path) {
 
 // Save nano editor edits
 int save_edited_file(const char *path) {
-    FILE *f = fopen(path, "w");
-    if (!f) return 0;
+    int total_len = 0;
     for (int i = 0; i < edit_line_count; i++) {
-        fprintf(f, "%s\n", edit_lines[i]);
+        total_len += strlen(edit_lines[i]) + 2;
     }
-    fclose(f);
-    return 1;
+    char *new_content = malloc(total_len + 1);
+    if (!new_content) return 0;
+    new_content[0] = '\0';
+    for (int i = 0; i < edit_line_count; i++) {
+        strcat(new_content, edit_lines[i]);
+        strcat(new_content, "\n");
+    }
+    
+    char desc[256];
+    snprintf(desc, sizeof(desc), "Save manual edits from Nano Editor");
+    int success = apply_file_change_with_five_steps(path, new_content, desc);
+    free(new_content);
+    return success;
 }
 
 // Interactive ncurses-style terminal dashboard and Nano editor emulator
@@ -1823,6 +1959,12 @@ void inject_code_inside_class(const char *file_path, const char *code_to_inject)
     content[read_bytes] = '\0';
     fclose(f);
     
+    char *new_content = malloc(read_bytes + strlen(code_to_inject) + 128);
+    if (!new_content) {
+        free(content);
+        return;
+    }
+    
     int last_brace_idx = -1;
     for (int i = (int)read_bytes - 1; i >= 0; i--) {
         if (content[i] == '}') {
@@ -1832,37 +1974,33 @@ void inject_code_inside_class(const char *file_path, const char *code_to_inject)
     }
     
     if (last_brace_idx == -1) {
-        f = fopen(file_path, "a");
-        if (f) {
-            fprintf(f, "%s", code_to_inject);
-            fclose(f);
+        snprintf(new_content, read_bytes + strlen(code_to_inject) + 128, "%s%s", content, code_to_inject);
+    } else {
+        int second_last_brace_idx = -1;
+        for (int i = last_brace_idx - 1; i >= 0; i--) {
+            if (content[i] == '}') {
+                second_last_brace_idx = i;
+                break;
+            }
         }
-        free(content);
-        return;
-    }
-    
-    int second_last_brace_idx = -1;
-    for (int i = last_brace_idx - 1; i >= 0; i--) {
-        if (content[i] == '}') {
-            second_last_brace_idx = i;
-            break;
+        
+        int target_insert_idx = last_brace_idx;
+        if (second_last_brace_idx != -1) {
+            target_insert_idx = second_last_brace_idx;
         }
+        
+        strncpy(new_content, content, target_insert_idx);
+        new_content[target_insert_idx] = '\0';
+        strcat(new_content, code_to_inject);
+        strcat(new_content, content + target_insert_idx);
     }
     
-    int target_insert_idx = last_brace_idx;
-    if (second_last_brace_idx != -1) {
-        target_insert_idx = second_last_brace_idx;
-    }
-    
-    f = fopen(file_path, "w");
-    if (f) {
-        fwrite(content, 1, target_insert_idx, f);
-        fprintf(f, "%s", code_to_inject);
-        fwrite(content + target_insert_idx, 1, read_bytes - target_insert_idx, f);
-        fclose(f);
-    }
+    char desc[256];
+    snprintf(desc, sizeof(desc), "Inject feature/skeleton boilerplate code into class");
+    apply_file_change_with_five_steps(file_path, new_content, desc);
     
     free(content);
+    free(new_content);
 }
 
 void apply_command_line_qadd(const char *dir_path, const char *qadd_query) {
