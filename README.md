@@ -1,5 +1,5 @@
 # cli_scanner
-parses directories for c# projects (files) and can auto suggest, fix, and implement features
+parses directories for c, c++, and c# projects (files) and can auto suggest, fix, and implement features
 
 to install OR update:
 1. get devkitpro installed on your windows machine
