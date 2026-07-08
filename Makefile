@@ -1,7 +1,7 @@
 # Makefile for C# Project Intelligence CLI Scanner (C Edition)
 
 CC = gcc
-CFLAGS = -Wall -O2
+CFLAGS = -Wall -O2 -Werror
 TARGET = cli_scanner
 
 # Windows detection

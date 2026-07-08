@@ -1537,12 +1537,12 @@ void run_suggest_mode(const char *dir_path, const char *suggest_query) {
         if (!printed_any) {
             char clean_title[128] = "";
             int ct_idx = 0;
-            for (int i = 0; suggest_query[i] != ' ' && ct_idx < 127; i++) {
+            for (int i = 0; suggest_query[i] != '\0' && ct_idx < 127; i++) {
                 if (((suggest_query[i] >= 'a' && suggest_query[i] <= 'z') || (suggest_query[i] >= 'A' && suggest_query[i] <= 'Z') || (suggest_query[i] >= '0' && suggest_query[i] <= '9') || suggest_query[i] == ' ')) {
                     clean_title[ct_idx++] = suggest_query[i];
                 }
             }
-            clean_title[ct_idx] = ' ';
+            clean_title[ct_idx] = '\0';
             if (strlen(clean_title) == 0) {
                 strcpy(clean_title, "Advanced Custom Feature");
             } else {
