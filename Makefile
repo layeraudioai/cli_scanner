@@ -17,6 +17,8 @@ BIN = $(TARGET)$(TARGET_EXT)
 
 all: $(BIN)
 
+install: install.bat $(BIN)
+
 $(BIN): cli_scanner.c cli_scanner.h
 	$(CC) $(CFLAGS) cli_scanner.c -o $(BIN)
 
