@@ -1,7 +1,7 @@
 # Makefile for C# Project Intelligence CLI Scanner (C Edition)
 
-CC = gcc
-CFLAGS = -Wall -O2 -Werror
+CC = g++
+CFLAGS = -Wall -O2 -Werror -std=c++11
 TARGET = cli_scanner
 
 # Windows detection
@@ -17,10 +17,8 @@ BIN = $(TARGET)$(TARGET_EXT)
 
 all: $(BIN)
 
-install: install.bat $(BIN)
-
-$(BIN): cli_scanner.c cli_scanner.h
-	$(CC) $(CFLAGS) cli_scanner.c -o $(BIN)
+$(BIN): cli_scanner.cpp cli_scanner.hpp webgl_bridge.c renderer.cpp
+	$(CC) $(CFLAGS) cli_scanner.cpp webgl_bridge.c renderer.cpp -o $(BIN)
 
 clean:
 	$(RM) $(BIN)
