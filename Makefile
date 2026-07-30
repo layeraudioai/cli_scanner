@@ -1,7 +1,7 @@
 # Makefile for C# Project Intelligence CLI Scanner (C Edition)
 
 CC = g++
-CFLAGS = -Wall -O2 -Werror -std=c++11
+CFLAGS = -Wall -O2 -Werror -std=c++17
 TARGET = cli_scanner
 
 # Windows detection
@@ -17,8 +17,8 @@ BIN = $(TARGET)$(TARGET_EXT)
 
 all: $(BIN)
 
-$(BIN): cli_scanner.cpp cli_scanner.hpp webgl_bridge.c renderer.cpp
-	$(CC) $(CFLAGS) cli_scanner.cpp webgl_bridge.c renderer.cpp -o $(BIN)
+$(BIN): cli_scanner.cpp cli_scanner.hpp webgl_bridge.c renderer.cpp flabergast.c project_creator.cpp
+	$(CC) $(CFLAGS) cli_scanner.cpp webgl_bridge.c renderer.cpp project_creator.cpp -o $(BIN)
 
 clean:
 	$(RM) $(BIN)
