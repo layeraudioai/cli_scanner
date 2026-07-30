@@ -1416,16 +1416,16 @@ void draw_highlighted_substring(FrameBuffer& fb, int x, int y, const std::string
             }
 
             fb.draw_text(current_x, y, word, color);
-            current_x += word.length();
+            current_x += (int)word.length();
         } else {
             char c = plain[j];
-            int color = 0;
+            int color_pair = 0;
             if (c == '{' || c == '}' || c == '(' || c == ')' || c == '[' || c == ']') {
-                color = 2; // Yellow
+                color_pair = 2; // Yellow
             } else if (c == ';' || c == '=') {
-                color = 5; // Blue
+                color_pair = 5; // Blue
             }
-            fb.draw_text(current_x, y, std::string(1, c), color);
+            fb.draw_text(current_x, y, std::string(1, c), color_pair);
             current_x++;
             j++;
         }

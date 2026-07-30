@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <string>
 
 // Platform detection
 #ifdef _WIN32
@@ -72,7 +73,7 @@ int check_gets_usage(const char *content, const char *file_path, ScannerIssue *i
 void print_highlighted_substring(const char *line, int width);
 void apply_auto_repair(const char *file_path, ScannerIssue *issues, int issue_count);
 void run_interactive_ui(const char *dir_path);
-void run_io_chat_ui(const char *dir_path);
+void run_ai_chat_ui(const char *dir_path); // Forward declaration
 void run_suggest_mode(const char *dir_path, const char *suggest_query);
 void run_create_project_mode(const char *project_name);
 void apply_command_line_qadd(const char *dir_path, const char *qadd_query);
@@ -83,6 +84,7 @@ const char* init_music_engine(const char *seed_str, int print_seed);
 void stop_music_engine(void);
 char* call_gemini_flash_api(const char *api_key, const char *query);
 void draw_bgm_visualizer(void);
+void create_project_from_prompt(const std::string &prompt);
 void init_webgl_viewport(int width, int height);
 #ifdef __cplusplus
 }
