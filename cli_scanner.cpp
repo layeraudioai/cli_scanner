@@ -10,13 +10,6 @@
 char edit_lines[MAX_LINES][MAX_LINE_LEN];
 int edit_line_count = 0;
 
-typedef struct {
-    int fps_cap;
-    int term_cols;
-    int term_rows;
-    bool use_simple_colors;
-} PerformanceSettings;
-
 volatile int g_current_note_freq = 0;
 
 // Initialize terminal settings (particularly for enabling virtual terminal sequences / ANSI on Windows 10+)
@@ -1448,11 +1441,62 @@ void draw_bgm_visualizer_fb(FrameBuffer& fb, int y, int x, int width) {
     fb.draw_text(x, y, bar, 4); // Cyan bar
 }
 
+void run_create_project_ui(const char *dir_path, const PerformanceSettings& settings) {
+    char prompt_buffer[256] = "";
+    int cursor_pos = 0;
+    bool project_created = false;
+
+    while (true) {
+        FrameBuffer fb(settings.term_cols, settings.term_rows);
+        fb.clear();
+        fb.draw_box(0, 0, settings.term_cols, settings.term_rows, "CREATE NEW PROJECT");
+
+        fb.draw_text(2, 2, "Project directory is empty.", 0);
+        fb.draw_text(2, 3, "Describe the project you want to create:", 0);
+
+        std::string prompt_line = "> " + std::string(prompt_buffer);
+        fb.draw_text(2, 5, prompt_line, 2);
+
+        // Draw cursor
+        if (cursor_pos < (int)prompt_line.length() - 2) {
+            fb.buffer[5][2 + cursor_pos + 2].ch = '_';
+        }
+
+        fb.draw_text(2, settings.term_rows - 2, "[Enter] Create Project  [Q] Quit", 0);
+
+        render_framebuffer(fb);
+
+        int key = read_key();
+        if (key == 'q' || key == 'Q' || key == 27) { // Quit on 'q', 'Q', or ESC
+            return;
+        } else if (key == 13) { // Enter
+            if (strlen(prompt_buffer) > 0 && !project_created) {
+                create_project_from_prompt(prompt_buffer);
+                sprintf(prompt_buffer, "Project created! Press Q to exit and re-launch UI.");
+                cursor_pos = (int)strlen(prompt_buffer);
+                project_created = true;
+            }
+        } else if (key == 8 || key == 127) { // Backspace
+            if (cursor_pos > 0 && !project_created) {
+                prompt_buffer[--cursor_pos] = '\0';
+            }
+        } else if (isprint(key) && cursor_pos < (int)sizeof(prompt_buffer) - 1 && !project_created) {
+            prompt_buffer[cursor_pos++] = (char)key;
+            prompt_buffer[cursor_pos] = '\0';
+        }
+    }
+}
+
 // Interactive ncurses-style terminal dashboard and Nano editor emulator
 void run_interactive_ui(const char *dir_path, const PerformanceSettings& settings) {
     char files_arr[100][256];
     int file_count = 0;
     collect_source_files(dir_path, files_arr, &file_count);
+
+    if (file_count == 0) {
+        run_create_project_ui(dir_path, settings);
+        return;
+    }
 
     char status_msg[128] = "Workspace initialized. Ready.";
     int selected_idx = 0;
@@ -1484,7 +1528,11 @@ void run_interactive_ui(const char *dir_path, const PerformanceSettings& setting
         int main_height = term_rows - 6;
 
         // Main boxes
-        fb.draw_box(0, 0, term_cols, term_rows, "C/C++/C# INTERACTIVE COMPILER-EMULATOR (RELEASE 70.0 TERMINX ACTIVE)");
+        std::string title = "C/C++/C# INTERACTIVE COMPILER-EMULATOR (RELEASE 70.0 TERMINX ACTIVE)";
+        if ((int)title.length() > term_cols - 4) {
+            title = title.substr(0, term_cols - 4);
+        }
+        fb.draw_box(0, 0, term_cols, term_rows, title.c_str());
         fb.draw_box(0, 2, mid_col, main_height, "PROJECT WORKSPACE FILE EXPLORER");
         fb.draw_box(mid_col, 2, term_cols - mid_col, main_height, "INSPECTOR & PREVIEW");
 
@@ -1542,7 +1590,11 @@ void run_interactive_ui(const char *dir_path, const PerformanceSettings& setting
         fb.draw_text(1, term_rows - 4, status_line, 2);
 
         // BGM Visualizer
-        draw_bgm_visualizer_fb(fb, term_rows - 3, 2, term_cols - 4);
+        int visualizer_width = term_cols - 4;
+        if (visualizer_width < 0) visualizer_width = 0;
+        if (term_rows > 3) {
+            draw_bgm_visualizer_fb(fb, term_rows - 3, 2, visualizer_width);
+        }
 
         // Help text
         fb.draw_text(2, term_rows - 2, "[↑/↓] Nav [R] Scan [A] Fix [Enter] Edit [Q] Quit", 0);
@@ -1587,7 +1639,7 @@ typedef struct {
     char message[2048];
 } ChatMessage;
 
-void run_io_chat_ui(const char *dir_path) {
+void run_ai_chat_ui(const char *dir_path) {
     ChatMessage chat_history[50];
     int chat_count = 0;
 
@@ -2815,7 +2867,7 @@ int main(int argc, char *argv[]) { // NOLINT(build/classic_main)
     
     if (ui_mode) {
         if (io_mode) {
-            run_io_chat_ui(target_dir);
+            run_ai_chat_ui(target_dir);
         } else {
             long score = run_performance_benchmark();
             double fps = score / 1.33;

@@ -52,6 +52,13 @@ typedef struct {
     char fixed_code[256];
 } ScannerIssue;
 
+typedef struct {
+    int fps_cap;
+    int term_cols;
+    int term_rows;
+    bool use_simple_colors;
+} PerformanceSettings;
+
 // When compiling as C++, use extern "C" to prevent name mangling
 // for functions that are implemented in the C style.
 #ifdef __cplusplus
@@ -73,6 +80,7 @@ int check_gets_usage(const char *content, const char *file_path, ScannerIssue *i
 void print_highlighted_substring(const char *line, int width);
 void apply_auto_repair(const char *file_path, ScannerIssue *issues, int issue_count);
 void run_interactive_ui(const char *dir_path);
+void run_create_project_ui(const char *dir_path, const PerformanceSettings& settings);
 void run_ai_chat_ui(const char *dir_path); // Forward declaration
 void run_suggest_mode(const char *dir_path, const char *suggest_query);
 void run_create_project_mode(const char *project_name);
