@@ -12,8 +12,10 @@ discord invite: https://discord.gg/sBzJTgCV8 (infinite use, valid till august 7t
 licenses
 ---
 https://github.com/chrismaltby/gb-studio
+-
 https://github.com/chrismaltby/gb-studio/blob/develop/LICENSE
 --
 https://github.com/MonoGame/MonoGame
+-
 https://github.com/MonoGame/MonoGame/blob/develop/LICENSE.txt
 --
